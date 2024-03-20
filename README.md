@@ -1,12 +1,80 @@
-<Window x:Class="AdvancedUdpComms.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="UDP Haberleşme Uygulaması" Height="350" Width="525">
-    <Grid>
-        <ListBox x:Name="UserListBox" HorizontalAlignment="Left" Height="100" Margin="10,10,0,0" VerticalAlignment="Top" Width="120"/>
-        <TextBox x:Name="MessageTextBox" HorizontalAlignment="Left" Height="23" Margin="10,120,0,0" VerticalAlignment="Top" Width="120"/>
-        <Button Content="Gönder" HorizontalAlignment="Left" Margin="10,150,0,0" VerticalAlignment="Top" Width="75" Click="SendButton_Click"/>
-        <TextBox x:Name="MessagesTextBox" HorizontalAlignment="Left" Height="100" Margin="140,10,0,0" VerticalAlignment="Top" Width="355" IsReadOnly="True"/>
-    </Grid>
-</Window>
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Windows;
 
+namespace AdvancedUdpComms
+{
+    public partial class MainWindow : Window
+    {
+        private UdpClient udpClient;
+        private Dictionary<string, IPEndPoint> userEndPoints;
+
+        public MainWindow()
+        {
+            InitializeComponent();
+            InitializeUdpClient();
+            InitializeUserList();
+        }
+
+        private void InitializeUdpClient()
+        {
+            // Yerel port numarası ile UdpClient nesnesini başlat
+            IPEndPoint localEndPoint = new IPEndPoint(IPAddress.Any, 11000);
+            udpClient = new UdpClient(localEndPoint);
+
+            // Veri almayı başlat
+            StartReceiving();
+        }
+
+        private void InitializeUserList()
+        {
+            // Kullanıcı listesi ve IP adresleri burada tanımlanır
+            userEndPoints = new Dictionary<string, IPEndPoint>
+            {
+                { "Kullanıcı1", new IPEndPoint(IPAddress.Parse("192.168.1.2"), 11000) },
+                { "Kullanıcı2", new IPEndPoint(IPAddress.Parse("192.168.1.3"), 11000) },
+                // Daha fazla kullanıcı eklenebilir
+            };
+
+            // Kullanıcı listesini UI'a bağla
+            UserListBox.ItemsSource = userEndPoints.Keys;
+        }
+
+        private void StartReceiving()
+        {
+            udpClient.BeginReceive(ReceiveCallback, null);
+        }
+
+        private void ReceiveCallback(IAsyncResult ar)
+        {
+            IPEndPoint remoteEndPoint = new IPEndPoint(IPAddress.Any, 0);
+            byte[] receivedBytes = udpClient.EndReceive(ar, ref remoteEndPoint);
+            string receivedMessage = Encoding.UTF8.GetString(receivedBytes);
+
+            // UI thread üzerinde güncelleme yapmak için Dispatcher kullanın
+            Dispatcher.Invoke(() =>
+            {
+                MessagesTextBox.AppendText($"[{remoteEndPoint}]: {receivedMessage}\n");
+            });
+
+            // Veri almaya devam et
+            StartReceiving();
+        }
+
+        private void SendButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (UserListBox.SelectedItem != null)
+            {
+                string selectedUser = UserListBox.SelectedItem.ToString();
+                string messageToSend = MessageTextBox.Text;
+                byte[] bytesToSend = Encoding.UTF8.GetBytes(messageToSend);
+
+                // Seçilen kullanıcının IP adresine mesaj gönder
+                udpClient.Send(bytesToSend, bytesToSend.Length, userEndPoints[selectedUser]);
+            }
+        }
+    }
+}
