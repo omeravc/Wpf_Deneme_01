@@ -1,164 +1,87 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
 using System.Windows;
-using System.Windows.Controls;
+using System.Windows.Input;
 
-namespace WpfApp2024._04._02
+namespace UdpChatApp
 {
-    public partial class AnaPencere : Window
+    public partial class MainWindow : Window
     {
-        private const int Port = 11000;
-        private UdpClient _udpClient;
-        private Thread _listeningThread;
-        private Dictionary<string, IPEndPoint> _onlineUsers;
-        private Dictionary<string, string> _messageHistory;
+        private UdpClient udpClient;
+        private const int listenPort = 54321; // Sabit dinleme portu
+        private const int targetPort = 12345; // Sabit hedef port
 
-        public AnaPencere()
+        public MainWindow()
         {
             InitializeComponent();
-            _udpClient = new UdpClient(Port);
-            _onlineUsers = new Dictionary<string, IPEndPoint>();
-            _messageHistory = new Dictionary<string, string>();
-            _listeningThread = new Thread(ListenForMessages);
-            _listeningThread.Start();
-            LoadUsers(); // Kullanıcıları yükle
+            this.Loaded += MainWindow_Loaded;
         }
 
-        private void ListenForMessages()
+        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
         {
+            udpClient = new UdpClient(listenPort);
+            udpClient.BeginReceive(new AsyncCallback(ReceiveCallback), null);
+            MessageBox.Show("UDP Client is listening on port " + listenPort);
+        }
+
+        private void ReceiveCallback(IAsyncResult i)
+        {
+            IPEndPoint remoteEP = new IPEndPoint(IPAddress.Any, listenPort);
+            byte[] received = udpClient.EndReceive(i, ref remoteEP);
+            string message = Encoding.UTF8.GetString(received);
+            Dispatcher.Invoke(() => messagesTextBox.Text += $"Received: {message}\n");
+            udpClient.BeginReceive(new AsyncCallback(ReceiveCallback), null);
+        }
+
+        private void SendButton_Click(object sender, RoutedEventArgs e)
+        {
+            string targetIp = targetIpTextBox.Text;
+            string message = messageTextBox.Text;
+            string timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            string messageToSend = $"{timestamp} : {message}";
+
             try
             {
-                while (true)
-                {
-                    IPEndPoint remoteIpEndPoint = new IPEndPoint(IPAddress.Any, Port);
-                    byte[] receivedBytes = _udpClient.Receive(ref remoteIpEndPoint);
-                    string message = Encoding.ASCII.GetString(receivedBytes);
+                UdpClient senderClient = new UdpClient();
+                IPEndPoint endPoint = new IPEndPoint(IPAddress.Parse(targetIp), targetPort);
+                byte[] bytesToSend = Encoding.UTF8.GetBytes(messageToSend);
+                senderClient.Send(bytesToSend, bytesToSend.Length, endPoint);
+                senderClient.Close();
 
-                    Dispatcher.Invoke(() => HandleReceivedMessage(message, remoteIpEndPoint));
-                }
+                messagesTextBox.Text += $"Sent: {messageToSend}\n";
+                messageTextBox.Clear(); // Clears the message box after sending
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Hata: " + ex.Message);
+                MessageBox.Show($"Error sending message: {ex.Message}");
             }
         }
 
-        private void HandleReceivedMessage(string message, IPEndPoint senderEndPoint)
+        private void MessageTextBox_KeyDown(object sender, KeyEventArgs e)
         {
-            string senderUsername = _onlineUsers.FirstOrDefault(x => x.Value.Equals(senderEndPoint)).Key;
-            string formattedMessage = $"{DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss")} - {senderUsername}: {message}\n";
-            textBoxMessages.Text += formattedMessage; // Eski mesajların üzerine eklenir
-            AddMessageToHistory(senderUsername, formattedMessage);
-        }
-
-        private void AddMessageToHistory(string username, string message)
-        {
-            if (!_messageHistory.ContainsKey(username))
-                _messageHistory.Add(username, "");
-
-            _messageHistory[username] += message;
-        }
-
-        private void SendMessage(string message, IPEndPoint receiverEndPoint)
-        {
-            byte[] bytesToSend = Encoding.ASCII.GetBytes(message);
-            _udpClient.Send(bytesToSend, bytesToSend.Length, receiverEndPoint);
-        }
-
-        private void ButtonSend_Click(object sender, RoutedEventArgs e)
-        {
-            SendMessageToSelectedUser();
-        }
-
-        private void TextBoxMessage_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
-        {
-            if (e.Key == System.Windows.Input.Key.Enter)
+            if (e.Key == Key.Enter)
             {
-                SendMessageToSelectedUser();
+                SendButton_Click(this, new RoutedEventArgs());
             }
-        }
-
-        private void SendMessageToSelectedUser()
-        {
-            if (listBoxUsers.SelectedItem == null)
-            {
-                MessageBox.Show("Lütfen bir kullanıcı seçin.");
-                return; // Bir kullanıcı seçilmediyse gönderme işlemi iptal edilir.
-            }
-
-            string selectedUsername = listBoxUsers.SelectedItem.ToString();
-            IPEndPoint receiverEndPoint = _onlineUsers[selectedUsername];
-            string messageToSend = textBoxMessage.Text;
-
-            SendMessage(messageToSend, receiverEndPoint);
-
-            textBoxMessages.Text += $"{DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss")} - Ben: {messageToSend}\n";
-            AddMessageToHistory(selectedUsername, $"{DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss")} - Ben: {messageToSend}\n");
-            textBoxMessage.Clear();
-        }
-
-        private void LoadUsers()
-        {
-            _onlineUsers.Clear();
-            listBoxUsers.Items.Clear();
-
-            _onlineUsers.Add("Kullanıcı1", new IPEndPoint(IPAddress.Parse("192.168.1.101"), Port));
-            _onlineUsers.Add("Kullanıcı2", new IPEndPoint(IPAddress.Parse("192.168.1.102"), Port));
-
-            foreach (var username in _onlineUsers.Keys)
-            {
-                listBoxUsers.Items.Add(username);
-            }
-        }
-
-        private void ListBoxUsers_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (listBoxUsers.SelectedItem != null)
-            {
-                string selectedUsername = listBoxUsers.SelectedItem.ToString();
-                textBoxMessages.Text = _messageHistory.ContainsKey(selectedUsername) ? _messageHistory[selectedUsername] : "";
-            }
-        }
-
-        protected override void OnClosed(EventArgs e)
-        {
-            base.OnClosed(e);
-            _udpClient.Close();
-            _listeningThread.Abort();
         }
     }
 }
 
 
+---------------------------------------------
 
-//////////////////////////////////////////////////
-
-
-<Window x:Class="WpfApp2024._04._02.AnaPencere"
+<Window x:Class="UdpChatApp.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="UDP Sohbet Uygulaması" Height="450" Width="600">
-    <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="Auto"/>
-            <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
-
-        <!-- Kullanıcılar ListBox -->
-        <ListBox x:Name="listBoxUsers" Grid.Column="0" Margin="10" SelectionChanged="ListBoxUsers_SelectionChanged"/>
-
-        <!-- Mesajlar için TextBox -->
-        <TextBox x:Name="textBoxMessages" Grid.Column="1" Margin="10" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" IsReadOnly="True"/>
-
-        <!-- Mesaj girişi ve Gönder düğmesi -->
-        <StackPanel Grid.Column="1" Margin="10" VerticalAlignment="Bottom">
-            <TextBox x:Name="textBoxMessage" Height="100" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" AcceptsReturn="True" KeyDown="TextBoxMessage_KeyDown"/>
-            <Button Content="Gönder" Click="ButtonSend_Click" HorizontalAlignment="Right" Margin="0 5 0 0"/>
-        </StackPanel>
-    </Grid>
+        Title="UDP Chat App" Height="400" Width="600">
+    <StackPanel Background="#F0F0F0">
+        <TextBox x:Name="targetIpTextBox" Height="23" Margin="10" Text="Enter Target IP" Foreground="DarkBlue"/>
+        <TextBox x:Name="messageTextBox" Height="23" Margin="10" Text="Enter Message" Foreground="DarkGreen" KeyDown="MessageTextBox_KeyDown"/>
+        <Button Content="Send Message" Margin="10" Click="SendButton_Click" Background="LightGreen"/>
+        <ScrollViewer Height="200" Margin="10">
+            <TextBox x:Name="messagesTextBox" IsReadOnly="True" Background="WhiteSmoke" TextWrapping="Wrap" Foreground="DarkRed"/>
+        </ScrollViewer>
+    </StackPanel>
 </Window>
