@@ -689,6 +689,177 @@ namespace UdpChatApp
     </StackPanel>
 </Window>
 
+11111111
+
+<Window
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    x:Class="UdpChatApp.MainWindow"
+    Title="UDP Chat App" Height="450" Width="650">
+    <StackPanel Background="#FFE8E8E8">
+        <TextBox x:Name="targetIpTextBox" Height="23" Margin="10" Text="172.29.101.196" Foreground="DarkBlue"/>
+        <TextBox x:Name="messageTextBox" Height="23" Margin="10" Text="Enter Message" Foreground="#FF01050C" KeyDown="MessageTextBox_KeyDown"/>
+        <Button Content="Send Message" Margin="10" Click="SendButton_Click" Background="#FF4DA8D8"/>
+        <Button Content="Select File" Margin="10" Click="SelectFileButton_Click" Background="#FF4DA8D8"/>
+        <ScrollViewer Height="200" Margin="10">
+            <ListBox x:Name="messagesListBox" Background="WhiteSmoke" Foreground="DarkRed"/>
+        </ScrollViewer>
+        <StatusBar x:Name="stbMain" Height="34">
+            <Label x:Name="stbLabelMain"/>
+        </StatusBar>
+    </StackPanel>
+</Window>
+
+
+
+
+using Microsoft.Win32;
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+
+namespace UdpChatApp
+{
+    public partial class MainWindow : Window
+    {
+        private UdpClient udpClient;
+        private const int listenPort = 54321;
+        private const int targetPort = 12345;
+
+        public MainWindow()
+        {
+            InitializeComponent();
+            this.Loaded += MainWindow_Loaded;
+        }
+
+        private void MainWindow_Loaded(object sender, RoutedEventArgs e)
+        {
+            udpClient = new UdpClient(listenPort);
+            udpClient.BeginReceive(new AsyncCallback(ReceiveCallback), null);
+            stbLabelMain.Content = "UDP Client is listening on port " + listenPort;
+        }
+
+        private void ReceiveCallback(IAsyncResult ar)
+        {
+            IPEndPoint remoteEP = new IPEndPoint(IPAddress.Any, listenPort);
+            byte[] received = udpClient.EndReceive(ar, ref remoteEP);
+            Dispatcher.Invoke(() =>
+            {
+                if (IsFile(received))
+                {
+                    ReceiveFile(received);
+                }
+                else
+                {
+                    string message = Encoding.UTF8.GetString(received);
+                    DisplayMessage($"Received: {message}", false);
+                }
+            });
+            udpClient.BeginReceive(new AsyncCallback(ReceiveCallback), null);
+        }
+
+        private bool IsFile(byte[] data)
+        {
+            // Basit bir dosya kontrolü, veri boyutuna göre ayarlanabilir.
+            return data.Length > 100; // 100 byte'tan büyükse dosya olarak kabul et
+        }
+
+        private void DisplayMessage(string message, bool isSentMe)
+        {
+            var messageItem = new ListBoxItem();
+            messageItem.Content = message;
+            if (isSentMe)
+            {
+                messageItem.HorizontalContentAlignment = HorizontalAlignment.Right;
+            }
+            else
+            {
+                messageItem.HorizontalContentAlignment = HorizontalAlignment.Left;
+            }
+            messagesListBox.Items.Add(messageItem);
+        }
+
+        private void SendButton_Click(object sender, RoutedEventArgs e)
+        {
+            string targetIp = targetIpTextBox.Text;
+            string message = messageTextBox.Text;
+            string time = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            string messageToSend = $"{time} : {message}";
+
+            try
+            {
+                UdpClient senderClient = new UdpClient();
+                IPEndPoint endPoint = new IPEndPoint(IPAddress.Parse(targetIp), targetPort);
+                byte[] bytesToSend = Encoding.UTF8.GetBytes(messageToSend);
+                senderClient.Send(bytesToSend, bytesToSend.Length, endPoint);
+                senderClient.Close();
+
+                DisplayMessage($"Sent: {messageToSend}", true);
+                messageTextBox.Clear(); // Clears the message box after sending
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error sending message: {ex.Message}");
+            }
+        }
+
+        private void SelectFileButton_Click(object sender, RoutedEventArgs e)
+        {
+            OpenFileDialog openFileDialog = new OpenFileDialog();
+            if (openFileDialog.ShowDialog() == true)
+            {
+                string fileName = openFileDialog.FileName;
+                SendFile(fileName);
+            }
+        }
+
+        private void SendFile(string filePath)
+        {
+            byte[] fileBytes = File.ReadAllBytes(filePath);
+            try
+            {
+                UdpClient senderClient = new UdpClient();
+                IPEndPoint endPoint = new IPEndPoint(IPAddress.Parse(targetIpTextBox.Text), targetPort);
+                senderClient.Send(fileBytes, fileBytes.Length, endPoint);
+                senderClient.Close();
+                DisplayMessage($"Sent file: {Path.GetFileName(filePath)}", true);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error sending file: {ex.Message}");
+            }
+        }
+
+        private void ReceiveFile(byte[] fileBytes)
+        {
+            SaveFileDialog saveFileDialog = new SaveFileDialog();
+            saveFileDialog.FileName = "received_file";
+            if (saveFileDialog.ShowDialog() == true)
+            {
+                File.WriteAllBytes(saveFileDialog.FileName, fileBytes);
+                MessageBox.Show($"File received and saved: {saveFileDialog.FileName}");
+                DisplayMessage($"Received file: {saveFileDialog.FileName}", false);
+            }
+        }
+
+        private void MessageTextBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter)
+            {
+                SendButton_Click(this, new RoutedEventArgs());
+            }
+        }
+    }
+}
+
+
+
+
+
 
 
 
