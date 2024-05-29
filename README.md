@@ -1010,6 +1010,70 @@ namespace UdpChatApp
 </Window>
 
 
+8888888
+
+
+private void SendFile(string filePath)
+{
+    try
+    {
+        string fileName = Path.GetFileName(filePath);
+        byte[] fileNameBytes = Encoding.UTF8.GetBytes(fileName);
+        byte[] fileBytes = File.ReadAllBytes(filePath);
+        byte[] combinedBytes = new byte[fileNameBytes.Length + 1 + fileBytes.Length];
+
+        // Dosya adını ve içeriğini birleştir
+        Array.Copy(fileNameBytes, combinedBytes, fileNameBytes.Length);
+        combinedBytes[fileNameBytes.Length] = 0; // Null karakter ile dosya adını ve içeriğini ayır
+        Array.Copy(fileBytes, 0, combinedBytes, fileNameBytes.Length + 1, fileBytes.Length);
+
+        UdpClient senderClient = new UdpClient();
+        IPEndPoint endPoint = new IPEndPoint(IPAddress.Parse(targetIpTextBox.Text), targetPort);
+        senderClient.Send(combinedBytes, combinedBytes.Length, endPoint);
+        senderClient.Close();
+    }
+    catch (Exception ex)
+    {
+        MessageBox.Show($"Error sending file: {ex.Message}");
+    }
+}
+
+
+
+
+
+
+private void ReceiveCallback(IAsyncResult i)
+{
+    IPEndPoint remoteEP = new IPEndPoint(IPAddress.Any, listenPort);
+    byte[] received = udpClient.EndReceive(i, ref remoteEP);
+
+    if (received.Length > 0)
+    {
+        // Null karakterin bulunduğu noktayı bul
+        int nullIndex = Array.IndexOf(received, (byte)0);
+        if (nullIndex > 0)
+        {
+            byte[] fileNameBytes = new byte[nullIndex];
+            Array.Copy(received, fileNameBytes, fileNameBytes.Length);
+            string fileName = Encoding.UTF8.GetString(fileNameBytes);
+
+            byte[] fileBytes = new byte[received.Length - nullIndex - 1];
+            Array.Copy(received, nullIndex + 1, fileBytes, 0, fileBytes.Length);
+
+            File.WriteAllBytes(fileName, fileBytes);
+        }
+        else
+        {
+            string message = Encoding.UTF8.GetString(received);
+            DisplayMessage($"Received: {message}", false);
+        }
+    }
+    udpClient.BeginReceive(new AsyncCallback(ReceiveCallback), null);
+}
+
+
+
 
 
 
